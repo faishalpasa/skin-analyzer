@@ -12,6 +12,9 @@ dist-ssr/
 *.local
 .vite/
 
+# ESLint
+.eslintcache
+
 # Environment variables
 .env
 .env.local
