@@ -64,11 +64,7 @@ const LandingPage = ({ onStart }: Props) => (
       </div>
     </main>
 
-    <footer className="border-t border-gray-100 py-5">
-      <p className="text-center text-xs text-gray-300">
-        © 2024 UjeLab · AI Beauty Analyzer
-      </p>
-    </footer>
+    <footer className="border-t border-gray-100 py-5" />
   </div>
 )
 

@@ -2,8 +2,13 @@ import type { FaceDetection } from "face-api.js"
 
 import {
   ACCENT_MAP,
+  BLEMISH_HEAVY_TIP_THRESHOLD,
+  BLEMISH_THRESHOLDS,
   COVERAGE_MAP,
+  COVERAGE_TIPS,
   FOUNDATION_MAP,
+  OILINESS_THRESHOLDS,
+  SKIN_TONE_THRESHOLDS,
   SKIN_TYPE_MAP,
 } from "@/constants/skinAnalyzer"
 import type {
@@ -97,16 +102,13 @@ const toHex = (val: number): string =>
 const classifySkinTone = (r: number, g: number, b: number): SkinTone => {
   const luminance = 0.299 * r + 0.587 * g + 0.114 * b
   const hex = `#${toHex(r)}${toHex(g)}${toHex(b)}`
-
-  if (luminance > 190)
-    return { id: "very-fair", label: "Sangat Cerah", emoji: "🌸", hex }
-  if (luminance > 160) return { id: "fair", label: "Cerah", emoji: "✨", hex }
-  if (luminance > 130)
-    return { id: "medium", label: "Sawo Matang Muda", emoji: "🌟", hex }
-  if (luminance > 100)
-    return { id: "tan", label: "Sawo Matang", emoji: "🌻", hex }
-  if (luminance > 70) return { id: "dark", label: "Gelap", emoji: "🌙", hex }
-  return { id: "very-dark", label: "Sangat Gelap", emoji: "🌑", hex }
+  const match = SKIN_TONE_THRESHOLDS.find(
+    ({ minLuminance }) => luminance > minLuminance,
+  )
+  const tone = match
+    ? match.tone
+    : SKIN_TONE_THRESHOLDS[SKIN_TONE_THRESHOLDS.length - 1].tone
+  return { ...tone, hex }
 }
 
 const calcBlemishScore = (
@@ -123,22 +125,20 @@ const calcBlemishScore = (
     if (dist > 35) blemishPixels++
   }
   const ratio = blemishPixels / pixels.length
-  if (ratio < 0.05) return { score: "clean", label: "Bersih", level: 0 }
-  if (ratio < 0.12) return { score: "mild", label: "Sedikit Bercak", level: 1 }
-  if (ratio < 0.22)
-    return { score: "moderate", label: "Bercak Sedang", level: 2 }
-  return { score: "heavy", label: "Banyak Bercak", level: 3 }
+  const match = BLEMISH_THRESHOLDS.find(({ maxRatio }) => ratio < maxRatio)
+  return match
+    ? match.result
+    : BLEMISH_THRESHOLDS[BLEMISH_THRESHOLDS.length - 1].result
 }
 
 const calcOilinessScore = (r: number, g: number, b: number): OilinessScore => {
   const brightness = (r + g + b) / 3
   const redBias = r - (g + b) / 2
   const oilyScore = (brightness / 255) * 0.5 + (redBias / 128) * 0.5
-
-  if (oilyScore < 0.3) return { score: "dry", label: "Kering" }
-  if (oilyScore < 0.55) return { score: "normal", label: "Normal" }
-  if (oilyScore < 0.75) return { score: "combination", label: "Kombinasi" }
-  return { score: "oily", label: "Berminyak" }
+  const match = OILINESS_THRESHOLDS.find(({ maxScore }) => oilyScore < maxScore)
+  return match
+    ? match.result
+    : OILINESS_THRESHOLDS[OILINESS_THRESHOLDS.length - 1].result
 }
 
 const getMakeupRecommendations = (
@@ -161,9 +161,9 @@ const getMakeupRecommendations = (
     icon: "🎨",
     product: COVERAGE_MAP[blemish.score],
     tip:
-      blemish.level >= 2
-        ? "Gunakan setting spray agar tahan lama"
-        : "Setting powder ringan sudah cukup",
+      blemish.level >= BLEMISH_HEAVY_TIP_THRESHOLD
+        ? COVERAGE_TIPS.high
+        : COVERAGE_TIPS.low,
   })
 
   const skinType = SKIN_TYPE_MAP[oiliness.score]
