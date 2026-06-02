@@ -14,6 +14,8 @@ const App = () => {
     setPage("result")
   }
 
+  console.log({ page, result })
+
   return (
     <>
       {page === "landing" && <LandingPage onStart={() => setPage("camera")} />}

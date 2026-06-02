@@ -12,6 +12,7 @@ import {
   SKIN_TYPE_MAP,
 } from "@/constants/skinAnalyzer"
 import type {
+  AnalysisError,
   BlemishScore,
   OilinessScore,
   Recommendation,
@@ -22,9 +23,9 @@ import type {
 export const analyzeSkin = (
   canvas: HTMLCanvasElement,
   detection: FaceDetection,
-): SkinAnalysisResult | null => {
+): SkinAnalysisResult | AnalysisError => {
   const ctx = canvas.getContext("2d")
-  if (!ctx) return null
+  if (!ctx) return { error: "Gagal membaca frame kamera" }
 
   const { x, y, width, height } = detection.box
 
@@ -38,7 +39,8 @@ export const analyzeSkin = (
   const clampedW = Math.min(sampleW, canvas.width - clampedX)
   const clampedH = Math.min(sampleH, canvas.height - clampedY)
 
-  if (clampedW <= 0 || clampedH <= 0) return null
+  if (clampedW <= 0 || clampedH <= 0)
+    return { error: "Area wajah terlalu kecil, coba mendekat ke kamera" }
 
   const imageData = ctx.getImageData(clampedX, clampedY, clampedW, clampedH)
   const pixels = imageData.data
@@ -62,7 +64,11 @@ export const analyzeSkin = (
     }
   }
 
-  if (skinPixelCount < 50) return null
+  if (skinPixelCount < 20)
+    return {
+      error:
+        "Piksel kulit tidak terdeteksi — pastikan pencahayaan cukup dan wajah terlihat jelas",
+    }
 
   const avgR = totalR / skinPixelCount
   const avgG = totalG / skinPixelCount
@@ -88,12 +94,12 @@ export const analyzeSkin = (
 }
 
 const isSkinPixel = (r: number, g: number, b: number): boolean => {
-  const basicCheck = r > 95 && g > 40 && b > 20 && r > g && r > b
+  const basicCheck = r > 60 && g > 20 && b > 10 && r >= g && r > b
   if (!basicCheck) return false
-  if (r > 220) return true
+  if (r > 180) return true
   const max = Math.max(r, g, b)
   const min = Math.min(r, g, b)
-  return max - min > 15 && Math.abs(r - g) > 15
+  return max - min > 8 && Math.abs(r - g) > 5
 }
 
 const toHex = (val: number): string =>

@@ -33,6 +33,10 @@ export interface Recommendation {
   tip: string
 }
 
+export interface AnalysisError {
+  error: string
+}
+
 export interface SkinAnalysisResult {
   avgR: number
   avgG: number

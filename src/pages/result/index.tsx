@@ -30,9 +30,7 @@ const ResultPage = ({ result, onRetry }: Props) => {
         <span className="text-teal-600 font-bold text-base tracking-wide">
           UjeLab
         </span>
-        <h2 className="text-gray-700 font-semibold text-sm">
-          Hasil Analisis
-        </h2>
+        <h2 className="text-gray-700 font-semibold text-sm">Hasil Analisis</h2>
         <div className="w-16" />
       </header>
 

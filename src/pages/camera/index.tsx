@@ -4,6 +4,9 @@ import { useCallback, useEffect, useRef, useState } from "react"
 import type { SkinAnalysisResult } from "@/types/skin"
 import { analyzeSkin } from "@/utils/skinAnalyzer"
 
+const isAnalysisError = (r: unknown): r is { error: string } =>
+  typeof r === "object" && r !== null && "error" in r
+
 const MODEL_URL = "/models"
 
 type CameraStatus = "loading" | "ready" | "detecting" | "error"
@@ -19,15 +22,20 @@ const CameraPage = ({ onResult, onBack }: Props) => {
   const overlayRef = useRef<HTMLCanvasElement>(null)
   const streamRef = useRef<MediaStream | null>(null)
   const animFrameRef = useRef<number>(0)
-  const scanAnimRef = useRef<number>(0)
-  const scanLineRef = useRef<HTMLDivElement>(null)
   const countdownRef = useRef<ReturnType<typeof setInterval> | null>(null)
+  const lastDetectionRef = useRef<faceapi.FaceDetection | null>(null)
 
   const [status, setStatus] = useState<CameraStatus>("loading")
   const [loadingMsg, setLoadingMsg] = useState("Memuat model AI...")
   const [faceDetected, setFaceDetected] = useState(false)
   const [isScanning, setIsScanning] = useState(false)
   const [countdown, setCountdown] = useState<number | null>(null)
+  const [toast, setToast] = useState<string | null>(null)
+
+  const showToast = (message: string) => {
+    setToast(message)
+    setTimeout(() => setToast(null), 4000)
+  }
 
   const stopAll = () => {
     cancelAnimationFrame(animFrameRef.current)
@@ -138,6 +146,7 @@ const CameraPage = ({ onResult, onBack }: Props) => {
       ctx.clearRect(0, 0, overlay.width, overlay.height)
 
       if (detection) {
+        lastDetectionRef.current = detection
         setFaceDetected(true)
         drawFaceBox(ctx, detection.box, true)
       } else {
@@ -152,32 +161,6 @@ const CameraPage = ({ onResult, onBack }: Props) => {
     return () => cancelAnimationFrame(animFrameRef.current)
   }, [status])
 
-  useEffect(() => {
-    if (!isScanning) return
-
-    let pos = 0
-    let dir = 1
-
-    const animate = () => {
-      pos += dir * 0.6
-      if (pos >= 100) {
-        pos = 100
-        dir = -1
-      }
-      if (pos <= 0) {
-        pos = 0
-        dir = 1
-      }
-      if (scanLineRef.current) {
-        scanLineRef.current.style.top = `${pos}%`
-      }
-      scanAnimRef.current = requestAnimationFrame(animate)
-    }
-
-    scanAnimRef.current = requestAnimationFrame(animate)
-    return () => cancelAnimationFrame(scanAnimRef.current)
-  }, [isScanning])
-
   const captureAndAnalyze = useCallback(() => {
     if (status !== "ready") return
     setStatus("detecting")
@@ -187,6 +170,7 @@ const CameraPage = ({ onResult, onBack }: Props) => {
     let count = 5
     setCountdown(count)
 
+    if (countdownRef.current) clearInterval(countdownRef.current)
     countdownRef.current = setInterval(async () => {
       count--
       if (count > 0) {
@@ -197,34 +181,38 @@ const CameraPage = ({ onResult, onBack }: Props) => {
       if (countdownRef.current) clearInterval(countdownRef.current)
       setCountdown(null)
 
-      const video = videoRef.current
-      const canvas = canvasRef.current
-      if (!video || !canvas) return
+      try {
+        const video = videoRef.current
+        const canvas = canvasRef.current
+        const detection = lastDetectionRef.current
 
-      canvas.width = video.videoWidth
-      canvas.height = video.videoHeight
-      const ctx = canvas.getContext("2d")
-      ctx?.drawImage(video, 0, 0)
+        if (!video || !canvas || !detection) {
+          setIsScanning(false)
+          setStatus("ready")
+          return
+        }
 
-      const detection = await faceapi.detectSingleFace(
-        canvas,
-        new faceapi.TinyFaceDetectorOptions({
-          inputSize: 320,
-          scoreThreshold: 0.4,
-        }),
-      )
+        if (video.readyState < 2 || video.videoWidth === 0) {
+          setIsScanning(false)
+          setStatus("ready")
+          return
+        }
 
-      if (!detection) {
-        setIsScanning(false)
-        setStatus("ready")
-        return
-      }
+        canvas.width = video.videoWidth
+        canvas.height = video.videoHeight
+        const ctx = canvas.getContext("2d")
+        ctx?.drawImage(video, 0, 0)
 
-      const result = analyzeSkin(canvas, detection)
-      stopAll()
-      if (result) {
-        onResult(result)
-      } else {
+        const result = analyzeSkin(canvas, detection)
+        if (isAnalysisError(result)) {
+          showToast(result.error)
+          setIsScanning(false)
+          setStatus("ready")
+        } else {
+          stopAll()
+          onResult(result)
+        }
+      } catch (_err) {
         setIsScanning(false)
         setStatus("ready")
       }
@@ -285,23 +273,18 @@ const CameraPage = ({ onResult, onBack }: Props) => {
             <div className="absolute inset-0 z-10 pointer-events-none overflow-hidden">
               <div className="absolute inset-0 bg-teal-400/5" />
               <div
-                ref={scanLineRef}
-                className="absolute left-0 right-0"
-                style={{ top: "0%" }}
+                className="animate-scan-line absolute left-0 right-0 h-[2px]"
+                style={{
+                  background:
+                    "linear-gradient(to right, transparent, #14b8a6, #2dd4bf, #14b8a6, transparent)",
+                  boxShadow: "0 0 12px 4px rgba(20, 184, 166, 0.5)",
+                }}
               >
                 <div
                   className="absolute inset-x-0 bottom-full h-16"
                   style={{
                     background:
                       "linear-gradient(to bottom, transparent, rgba(20, 184, 166, 0.12))",
-                  }}
-                />
-                <div
-                  className="h-[2px]"
-                  style={{
-                    background:
-                      "linear-gradient(to right, transparent, #14b8a6, #2dd4bf, #14b8a6, transparent)",
-                    boxShadow: "0 0 12px 4px rgba(20, 184, 166, 0.5)",
                   }}
                 />
               </div>
@@ -341,12 +324,16 @@ const CameraPage = ({ onResult, onBack }: Props) => {
           </div>
         )}
 
-        {status === "ready" && !faceDetected && (
+        {status === "ready" && (
           <div className="max-w-xs text-center space-y-1.5">
-            <p className="text-xs text-gray-400">
+            <p
+              className={`text-xs ${faceDetected ? "text-teal-500" : "text-gray-400"}`}
+            >
               Pastikan wajah berada di tengah frame dan terlihat jelas.
             </p>
-            <ul className="text-xs text-gray-400 space-y-0.5">
+            <ul
+              className={`text-xs ${faceDetected ? "text-teal-500" : "text-gray-400"} space-y-0.5`}
+            >
               <li>• Pencahayaan cukup terang dan merata</li>
               <li>• Hindari cahaya latar yang terlalu terang</li>
               <li>• Wajah menghadap lurus ke kamera</li>
@@ -376,6 +363,15 @@ const CameraPage = ({ onResult, onBack }: Props) => {
           </div>
         )}
       </div>
+
+      {toast !== null && (
+        <div className="fixed bottom-6 left-4 right-4 flex justify-center pointer-events-none z-50">
+          <div className="bg-gray-900 text-white text-sm px-4 py-3 rounded-2xl shadow-lg flex items-start gap-2.5 max-w-sm w-full">
+            <span className="text-base leading-none mt-0.5">⚠️</span>
+            <span className="leading-snug">{toast}</span>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
